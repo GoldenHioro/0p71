@@ -1,0 +1,92 @@
+// ARQUIVO: Public.gs (Na Biblioteca)
+
+// --- Módulos Internos ---
+function healthCheck() {
+  return {
+    status: 'online',
+    config: (typeof CONFIG !== 'undefined'),
+    repoClientes: (typeof Repo_Clientes !== 'undefined'),
+    repoProcessos: (typeof Repo_Processos !== 'undefined')
+  };
+}
+
+// --- Pontes de Dados (Funções que o WebApp chama) ---
+
+// 1. Clientes
+function listarClientes() { 
+  return Repo_Clientes.listarTodos(); 
+}
+
+function salvarCliente(dados) { 
+  return Repo_Clientes.criarNovo(dados); 
+}
+
+// 2. Processos (AQUI ESTAVA O ERRO)
+// Adicionamos as duas formas para garantir compatibilidade
+
+function listarProcessos() {
+  // Forma antiga (pode dar null se tiver objeto complexo, mas elimina o erro "is not a function")
+  return Repo_Processos.listar(); 
+}
+
+function getProcessosSafe() {
+  // Forma Segura (Recomendada)
+  try {
+    var dados = Repo_Processos.listar();
+    return JSON.stringify(dados || []);
+  } catch (e) {
+    return JSON.stringify({ erro: e.message });
+  }
+}
+
+function apiListarProcessos() {
+  return JSON.stringify(Repo_Processos.listar());
+}
+
+function apiObterHistorico(numProcesso) {
+  return JSON.stringify(Repo_Processos.obterHistorico(numProcesso));
+}
+
+function apiVincularCliente(idProcesso, idCliente) {
+  try {
+    return JSON.stringify(Repo_Processos.vincularCliente(idProcesso, idCliente));
+  } catch (e) {
+    return JSON.stringify({ erro: e.message });
+  }
+}
+function apiGetFilaWhatsapp() {
+  return JSON.stringify(Service_Whatsapp.gerarFilaDisparos());
+}
+
+// ARQUIVO: Public.gs (Na Biblioteca TVOCore)
+
+// ... outras funções ...
+
+/**
+ * EXPOSIÇÃO PÚBLICA DAS FUNÇÕES DE PROCESSOS
+ */
+
+function apiListarProcessos() {
+  // Converte para JSON para passar pelo cabo da rede sem erros
+  return JSON.stringify(Repo_Processos.listar());
+}
+
+function apiObterHistorico(numProcesso) {
+  // Essa é a função que estava faltando!
+  return JSON.stringify(Repo_Processos.obterHistorico(numProcesso));
+}
+
+function apiVincularCliente(idProcesso, idCliente) {
+  try {
+    return JSON.stringify(Repo_Processos.vincularCliente(idProcesso, idCliente));
+  } catch (e) {
+    return JSON.stringify({ erro: e.message });
+  }
+}
+
+// ARQUIVO: Public.gs (Adicione ao final)
+
+function forcarVarreduraEmail() {
+  if (typeof Service_Gmail === 'undefined') return "Erro: Service_Gmail não carregado.";
+  return Service_Gmail.processarPJe();
+}
