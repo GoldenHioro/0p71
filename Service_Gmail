@@ -1,0 +1,151 @@
+// ARQUIVO: Service_Gmail.gs (Versão Enxuta - Sem Integra)
+
+var Service_Gmail = {
+
+  processarPJe: function() {
+    Logger.log("🤖 GAIUS: Varredura Otimizada (Sem Integra)...");
+    
+    const labelEntrada = CONFIG.LABELS.PJE_ENTRADA || "PJe";
+    const labelSaidaNome = CONFIG.LABELS.PJE_PROCESSADO || "PJe/Processado";
+    var labelFinal = GmailApp.getUserLabelByName(labelSaidaNome);
+    if (!labelFinal) labelFinal = GmailApp.createLabel(labelSaidaNome);
+    
+    const threads = GmailApp.search(`label:${labelEntrada}`, 0, 5);
+    if (threads.length === 0) return "Fila vazia";
+
+    const repoMov = BaseRepo.connect(CONFIG.SHEET_NAMES.MOVIMENTACOES);
+    const repoProc = BaseRepo.connect(CONFIG.SHEET_NAMES.PROCESSOS);
+    
+    let processados = 0;
+
+    threads.forEach(thread => {
+      const msg = thread.getMessages()[0];
+      const corpo = msg.getPlainBody();
+      const assuntoEmail = msg.getSubject();
+      
+      const dados = this.parseEmailPJe(corpo, assuntoEmail);
+      
+      if (dados.numero) {
+        
+        // Garante o processo pai
+        const idProcesso = this.garantirProcesso(repoProc, dados);
+
+        // Prepara Movimentação (SEM a chave INTEGRA)
+        const novaMov = {
+          ID: Utilities.getUuid(),
+          PROCESSO_NUM: dados.numero,
+          DATA_MOV: dados.dataMovimento,
+          DESCRICAO: dados.movimentoTexto, 
+          DATA_CAPTURA: new Date(),
+          ORIGEM: "Robô PJe"
+        };
+        
+        if (this.isAudiencia(dados.movimentoTexto)) {
+          novaMov.DESCRICAO = "⚠️ AUDIÊNCIA: " + novaMov.DESCRICAO;
+        }
+
+        const headers = repoMov.getDataRange().getValues()[0];
+        repoMov.appendRow(BaseRepo.objToRow(novaMov, headers, SCHEMAS.MOVIMENTACOES));
+        
+        processados++;
+      }
+
+      thread.removeLabel(GmailApp.getUserLabelByName(labelEntrada));
+      thread.addLabel(labelFinal);
+    });
+
+    return `${processados} e-mails processados.`;
+  },
+
+  parseEmailPJe: function(texto, assuntoEmail) {
+    let info = {
+      numero: null,
+      autor: "Desconhecido",
+      reu: "Desconhecido",
+      vara: "Não informada",
+      classe: "",
+      assuntoProcessual: "Não identificado",
+      movimentoTexto: "",
+      dataMovimento: new Date()
+    };
+
+    const rxNumero = /Número do Processo:\s*([\d\.\-]+)/;
+    const rxAutor = /Polo Ativo:\s*(.+)/;
+    const rxReu = /Polo Passivo:\s*(.+)/;
+    const rxVara = /Órgão:\s*(.+)/;
+    const rxClasse = /Classe Judicial:\s*(.+)/;
+    const rxAssunto = /Assunto:\s*(.+)/;
+
+    const mNum = texto.match(rxNumero);
+    if (mNum) info.numero = mNum[1].trim();
+    else {
+        const mAssuntoEmail = assuntoEmail.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+        if (mAssuntoEmail) info.numero = mAssuntoEmail[0];
+    }
+
+    const mAut = texto.match(rxAutor); if (mAut) info.autor = mAut[1].trim();
+    const mReu = texto.match(rxReu); if (mReu) info.reu = mReu[1].trim();
+    const mVara = texto.match(rxVara); if (mVara) info.vara = mVara[1].trim();
+    const mCla = texto.match(rxClasse); if (mCla) info.classe = mCla[1].trim();
+    const mAss = texto.match(rxAssunto); if (mAss) info.assuntoProcessual = mAss[1].trim();
+
+    const splitMov = texto.split("Data - Movimento");
+    if (splitMov.length > 1) {
+      let blocoMov = splitMov[1].trim();
+      blocoMov = blocoMov.split("Caso não tenha mais interesse")[0];
+      
+      const rxLinhaMov = /(\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2})\s-\s(.+)/;
+      const matchLinha = blocoMov.match(rxLinhaMov);
+      
+      if (matchLinha) {
+        const partes = matchLinha[1].split(' ');
+        const d = partes[0].split('/');
+        const h = partes[1].split(':');
+        info.dataMovimento = new Date(d[2], d[1]-1, d[0], h[0], h[1]);
+        info.movimentoTexto = matchLinha[2].trim();
+      } else {
+        info.movimentoTexto = blocoMov.substring(0, 200).replace(/\n/g, " ");
+      }
+    } else {
+      info.movimentoTexto = "Movimentação Genérica";
+    }
+
+    return info;
+  },
+
+  garantirProcesso: function(ws, dados) {
+    const todosDados = ws.getDataRange().getValues();
+    for (let i = 1; i < todosDados.length; i++) {
+      if (todosDados[i][1] == dados.numero) {
+        return todosDados[i][0];
+      }
+    }
+
+    Logger.log("✨ Novo Processo: " + dados.numero);
+    const novoId = Utilities.getUuid();
+    
+    const novoProc = {
+      ID: novoId,
+      NUMERO: dados.numero,
+      CLIENTE_ID: "Pendente Vinculo", 
+      POLO_ATIVO: dados.autor,
+      POLO_PASSIVO: dados.reu,
+      ORGAO: dados.vara,
+      CLASSE: dados.classe,
+      ASSUNTO: dados.assuntoProcessual,
+      VALOR_CAUSA: "",
+      STATUS: "Ativo",
+      ULTIMA_MOV_DATA: dados.dataMovimento,
+      LINK_PJE: "" 
+    };
+
+    const headers = ws.getDataRange().getValues()[0];
+    ws.appendRow(BaseRepo.objToRow(novoProc, headers, SCHEMAS.PROCESSOS));
+    
+    return novoId;
+  },
+
+  isAudiencia: function(texto) {
+    return /audiência|sessão|conciliação|instrução/i.test(texto);
+  }
+};
