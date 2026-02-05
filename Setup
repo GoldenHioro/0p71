@@ -1,0 +1,52 @@
+// ARQUIVO: Setup_Planilha.gs (Na Biblioteca)
+// OBJETIVO: Limpar a primeira linha e escrever os cabeçalhos corretos separadamente
+
+function FORCAR_CORRECAO_CABECALHOS() {
+  var ss = SpreadsheetApp.openById(CONFIG.IDS.SPREADSHEET);
+  
+  // 1. Corrigir Aba PROCESSOS
+  var abaProc = ss.getSheetByName(CONFIG.SHEET_NAMES.PROCESSOS);
+  if (!abaProc) {
+    abaProc = ss.insertSheet(CONFIG.SHEET_NAMES.PROCESSOS);
+  }
+  
+  // Pega os nomes exatos do Schema
+  var headersProc = [
+    SCHEMAS.PROCESSOS.ID,              // Coluna A: IdProcesso
+    SCHEMAS.PROCESSOS.NUMERO,          // Coluna B: NúmeroProcesso
+    SCHEMAS.PROCESSOS.CLIENTE_ID,      // Coluna C: Unique ID
+    SCHEMAS.PROCESSOS.POLO_ATIVO,      // Coluna D: Autor
+    SCHEMAS.PROCESSOS.POLO_PASSIVO,    // Coluna E: Réu
+    SCHEMAS.PROCESSOS.ORGAO,           // Coluna F: Vara_Orgao
+    SCHEMAS.PROCESSOS.CLASSE,          // Coluna G: Classe_Judicial
+    SCHEMAS.PROCESSOS.ASSUNTO,         // Coluna H: Assunto_Principal
+    SCHEMAS.PROCESSOS.VALOR_CAUSA,     // Coluna I: Valor_Causa
+    SCHEMAS.PROCESSOS.STATUS,          // Coluna J: Status
+    SCHEMAS.PROCESSOS.ULTIMA_MOV_DATA, // Coluna K: Data_Ultima_Mov
+    SCHEMAS.PROCESSOS.LINK_PJE         // Coluna L: Link_Sistema
+  ];
+
+  // Limpa a primeira linha e escreve os cabeçalhos separados
+  abaProc.getRange("A1:Z1").clearContent(); // Limpa sujeira antiga
+  abaProc.getRange(1, 1, 1, headersProc.length).setValues([headersProc]).setFontWeight("bold");
+  
+  Logger.log("✅ Aba DB_Processos corrigida com sucesso!");
+
+  // 2. Corrigir Aba CLIENTES (Só por garantia)
+  var abaCli = ss.getSheetByName(CONFIG.SHEET_NAMES.CLIENTES);
+  if (abaCli) {
+    var headersCli = [
+      SCHEMAS.CLIENTES.ID,
+      SCHEMAS.CLIENTES.NOME,
+      SCHEMAS.CLIENTES.CPF_CNPJ,
+      SCHEMAS.CLIENTES.EMAIL,
+      SCHEMAS.CLIENTES.TELEFONE,
+      SCHEMAS.CLIENTES.ENDERECO,
+      SCHEMAS.CLIENTES.CIDADE,
+      SCHEMAS.CLIENTES.CEP,
+      SCHEMAS.CLIENTES.PASTA_DRIVE_ID
+    ];
+    abaCli.getRange(1, 1, 1, headersCli.length).setValues([headersCli]).setFontWeight("bold");
+    Logger.log("✅ Aba DB_Clientes corrigida com sucesso!");
+  }
+}
