@@ -1,0 +1,210 @@
+// ARQUIVO: Service_PJe.gs
+
+var PjeService = {
+
+  /**
+   * Executa a varredura usando a lógica fiel ao PushPP (Source 1-38)
+   */
+  processarNovosEmails: function() {
+    const labelEntrada = GmailApp.getUserLabelByName(CONFIG.LABELS.PJE_ENTRADA);
+    
+    // Cria label de processado se não existir (Lógica do PushPP)
+    let labelProcessado = GmailApp.getUserLabelByName(CONFIG.LABELS.PJE_PROCESSADO);
+    if (!labelProcessado) {
+      labelProcessado = GmailApp.createLabel(CONFIG.LABELS.PJE_PROCESSADO);
+    }
+
+    if (!labelEntrada) {
+      Logger.log(`[PJe] Marcador '${CONFIG.LABELS.PJE_ENTRADA}' não encontrado.`);
+      return;
+    }
+
+    const threads = labelEntrada.getThreads();
+    Logger.log(`[PJe] Total de conversas no marcador: ${threads.length}`); //
+
+    threads.forEach(thread => {
+      const msgs = thread.getMessages();
+      let processouAlguma = false;
+
+      msgs.forEach(msg => {
+        if (msg.isUnread()) { // Filtro original do PushPP
+          
+          const corpo = msg.getPlainBody();
+          const assunto = msg.getSubject(); //
+
+          Logger.log(`[PJe] Lendo email: ${assunto}`);
+
+          // 1. Extração Fiel ao PushPP
+          const dados = this._extrairDadosPushPP(corpo, assunto);
+          
+          if (dados.numeroProcesso) {
+             // 2. Salva Capa (DB_Processos)
+             this._garantirCapaProcesso(dados);
+
+             // 3. Salva Movimentações (DB_Movimentacoes)
+             if (dados.movimentos && dados.movimentos.length > 0) {
+               dados.movimentos.forEach(mov => {
+                 this._registrarMovimentacao(dados.numeroProcesso, mov);
+               });
+             } else {
+               // Logica para "Sem Movimento Detectado"
+               this._registrarMovimentacao(dados.numeroProcesso, {
+                 data: new Date(),
+                 descricao: "Sem Movimento Detectado no corpo do email",
+                 textoPuro: ""
+               });
+             }
+
+             msg.markRead(); //
+             processouAlguma = true;
+          }
+        }
+      });
+
+      // Move a thread inteira se processou alguma mensagem (Lógica PushPP)
+      if (processouAlguma) {
+        thread.addLabel(labelProcessado);
+        thread.removeLabel(labelEntrada);
+      }
+    });
+  },
+
+  /**
+   * Réplica exata das Regex do PushPP
+   */
+  _extrairDadosPushPP: function(plainBody, assuntoEmail) {
+    const getMatch = (regex) => {
+      const m = plainBody.match(regex);
+      return m ? m[1].trim() : "";
+    };
+
+    // Regex originais do seu arquivo
+    let numero = getMatch(/Número do Processo:\s*(.*)/);
+    if (!numero) { 
+        // Fallback: Tenta pegar do assunto se falhar no corpo
+        const matchAssunto = assuntoEmail.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+        numero = matchAssunto ? matchAssunto[0] : "";
+    }
+
+    const dados = {
+      numeroProcesso: numero,
+      poloAtivo: getMatch(/Polo Ativo:\s*(.*)/),      //
+      poloPassivo: getMatch(/Polo Passivo:\s*(.*)/),  //
+      classeJudicial: getMatch(/Classe Judicial:\s*(.*)/), //
+      orgao: getMatch(/Órgão:\s*(.*)/),               //
+      dataAutuacao: getMatch(/Data de Autuação:\s*(.*)/),
+      assunto: getMatch(/Assunto:\s*(.*)/) || assuntoEmail,
+      movimentos: []
+    };
+
+    // Captura de Movimentações (Regex complexa do PushPP)
+    const regexMov = /(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})\s*-\s*([\s\S]*?)(?=\n*\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}\s*-|\n*Caso não tenha mais interesse|\n*\*ATENÇÃO:|\n*https:\/\/pje\.tjdft\.jus\.br|$)/g;
+    
+    let matchMov;
+    while ((matchMov = regexMov.exec(plainBody)) !== null) {
+      const dataHora = matchMov[1];
+      const textoPuro = matchMov[2].trim();
+      
+      // Filtros do PushPP
+      if (textoPuro.toLowerCase() !== "data - movimento" && 
+          textoPuro !== "" && 
+          !textoPuro.toLowerCase().startsWith("assunto:")) {
+            
+        dados.movimentos.push({
+          data: dataHora, // String original
+          textoPuro: textoPuro,
+          descricao: this._interpretarHumano(textoPuro) // Adiciona sua inteligência
+        });
+      }
+    }
+
+    return dados;
+  },
+
+  /**
+   * Lógica do Interpretador.js
+   */
+  _interpretarHumano: function(textoRaw) {
+    const texto = String(textoRaw).toLowerCase().trim();
+    
+    // Regras copiadas do seu Interpretador
+    const regras = [
+      { keys: ["juntada de petição", "juntada de manifestação"], resp: "Nova petição/manifestação juntada." },
+      { keys: ["conclusos", "conclusão"], resp: "Processo concluso para decisão do juiz." },
+      { keys: ["certidão", "certifico"], resp: "Certidão emitida no processo." },
+      { keys: ["intimado", "intimação"], resp: "Intimação expedida." },
+      { keys: ["audiência", "pauta"], resp: "Audiência ou pauta designada." },
+      { keys: ["expedição", "expedido"], resp: "Documento expedido." },
+      { keys: ["decisao", "sentença", "julgamento"], resp: "Nova decisão ou julgamento proferido." }
+    ];
+
+    for (let r of regras) {
+      if (r.keys.some(k => texto.includes(k))) return r.resp;
+    }
+    
+    // Se não cair em regra, retorna o texto original encurtado ou mensagem padrão
+    return texto.length > 100 ? texto.substring(0, 100) + "..." : texto; 
+  },
+
+  /**
+   * Salva na tabela PROCESSOS (Mantendo nossa arquitetura robusta)
+   */
+  _garantirCapaProcesso: function(dados) {
+    const repo = BaseRepo;
+    const schema = SCHEMAS.PROCESSOS;
+    const aba = CONFIG.SHEET_NAMES.PROCESSOS;
+
+    // Procura se já existe pelo Número
+    const proc = repo.getBy(aba, schema, "NUMERO", dados.numeroProcesso);
+
+    if (!proc) {
+      const novo = {
+        ID: Utilities.getUuid(),
+        NUMERO: dados.numeroProcesso,
+        POLO_ATIVO: dados.poloAtivo,
+        POLO_PASSIVO: dados.poloPassivo,
+        CLASSE: dados.classeJudicial,
+        ORGAO: dados.orgao,
+        ASSUNTO: dados.assunto,
+        STATUS: "Ativo",
+        ULTIMA_MOV_DATA: new Date(),
+        CLIENTE_ID: "Pendente Vinculo"
+      };
+      const ws = repo.connect(aba);
+      const headers = ws.getDataRange().getValues()[0];
+      ws.appendRow(repo.objToRow(novo, headers, schema));
+      Logger.log(`[Banco] Novo Processo criado: ${dados.numeroProcesso}`);
+    }
+  },
+
+  /**
+   * Salva na tabela MOVIMENTACOES
+   */
+  _registrarMovimentacao: function(numProcesso, mov) {
+    const repo = BaseRepo;
+    const schema = SCHEMAS.MOVIMENTACOES;
+    const aba = CONFIG.SHEET_NAMES.MOVIMENTACOES;
+
+    const novaMov = {
+      ID: Utilities.getUuid(),
+      PROCESSO_NUM: numProcesso,
+      DATA_MOV: mov.data,       // Data extraída do texto do email
+      DESCRICAO: mov.descricao, // Interpretação humana (Interpretador)
+      INTEGRA: mov.textoPuro,   // Texto original do TJ
+      ORIGEM: "Email PJe",
+      DATA_CAPTURA: new Date()
+    };
+    
+    const ws = repo.connect(aba);
+    const headers = ws.getDataRange().getValues()[0];
+    ws.appendRow(repo.objToRow(novaMov, headers, schema));
+    Logger.log(`[Banco] Movimentação salva para ${numProcesso}`);
+  }
+};
+
+/**
+ * Função Global para o Trigger
+ */
+function executarVarreduraPJe() {
+  PjeService.processarNovosEmails();
+}
