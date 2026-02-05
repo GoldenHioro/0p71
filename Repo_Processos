@@ -1,0 +1,87 @@
+var Repo_Processos = {
+
+  // Lista processos e cruza com nome do cliente
+  listar: function() {
+    var todos = BaseRepo.getAll(CONFIG.SHEET_NAMES.PROCESSOS, SCHEMAS.PROCESSOS);
+    var clientes = BaseRepo.getAll(CONFIG.SHEET_NAMES.CLIENTES, SCHEMAS.CLIENTES);
+    
+    return todos.map(p => {
+      // Normaliza o ID para evitar erros de nulo vs string vazia
+      let cID = p.CLIENTE_ID ? String(p.CLIENTE_ID).trim() : "";
+      
+      if (cID && cID !== "Pendente Vinculo") {
+        var cli = clientes.find(c => String(c.ID) === cID);
+        p.NOME_CLIENTE = cli ? cli.NOME : "Cliente não encontrado";
+      } else {
+        p.NOME_CLIENTE = "Pendente"; // Marcador visual
+        p.CLIENTE_ID = "Pendente Vinculo"; // Força padronização
+      }
+      return p;
+    });
+  },
+
+obterHistorico: function(numProcesso) {
+    // 1. Validação básica
+    if (!numProcesso) return [];
+    
+    // 2. Converte o input para String limpa
+    var alvo = String(numProcesso).trim();
+
+    // 3. Pega dados brutos
+    var todas = BaseRepo.getAll(CONFIG.SHEET_NAMES.MOVIMENTACOES, SCHEMAS.MOVIMENTACOES);
+    
+    // 4. Filtragem simples (Comparação de Texto)
+    var resultado = todas.filter(m => {
+      return String(m.PROCESSO_NUM).trim() === alvo;
+    });
+
+    // 5. Retorna SEM tentar ordenar datas complexas no servidor (evita o crash)
+    // Vamos deixar o navegador ordenar se precisar, ou mostrar na ordem que entrou.
+    return resultado.reverse(); // Apenas inverte para mostrar os últimos entrados primeiro
+  },
+  
+  // Vincula e define Polo
+  vincularCliente: function(idProcesso, idCliente) {
+    const ws = BaseRepo.connect(CONFIG.SHEET_NAMES.PROCESSOS);
+    const dados = ws.getDataRange().getValues();
+    
+    // Mapeia colunas pelo cabeçalho real
+    const headers = dados[0];
+    const map = {};
+    headers.forEach((h, i) => map[h] = i);
+    
+    // Verifica se as colunas essenciais existem
+    if (map[SCHEMAS.PROCESSOS.ID] === undefined || map[SCHEMAS.PROCESSOS.CLIENTE_ID] === undefined) {
+      throw new Error("Erro Crítico: Colunas do Schema não batem com a Planilha.");
+    }
+
+    // Busca dados do cliente para definir polo
+    const cliente = BaseRepo.getBy(CONFIG.SHEET_NAMES.CLIENTES, SCHEMAS.CLIENTES, "ID", idCliente);
+    const nomeCliente = cliente ? cliente.NOME.toUpperCase() : "";
+
+    for (let i = 1; i < dados.length; i++) {
+      if (dados[i][map[SCHEMAS.PROCESSOS.ID]] === idProcesso) {
+        
+        // 1. Grava ID do Cliente
+        ws.getRange(i + 1, map[SCHEMAS.PROCESSOS.CLIENTE_ID] + 1).setValue(idCliente);
+        
+        // 2. Define Polo (Autor/Réu)
+        let papel = "Indefinido";
+        if (map[SCHEMAS.PROCESSOS.POLO_ATIVO] !== undefined) {
+            const autor = String(dados[i][map[SCHEMAS.PROCESSOS.POLO_ATIVO]]).toUpperCase();
+            const reu = String(dados[i][map[SCHEMAS.PROCESSOS.POLO_PASSIVO]]).toUpperCase();
+            
+            if (autor.includes(nomeCliente)) papel = "Ativo (Autor)";
+            else if (reu.includes(nomeCliente)) papel = "Passivo (Réu)";
+            
+            // Grava Polo se a coluna existir
+            if (map[SCHEMAS.PROCESSOS.SEU_POLO] !== undefined) {
+               ws.getRange(i + 1, map[SCHEMAS.PROCESSOS.SEU_POLO] + 1).setValue(papel);
+            }
+        }
+        return { success: true, papel: papel };
+      }
+    }
+    throw new Error("Processo não encontrado no Banco de Dados.");
+  }
+};
