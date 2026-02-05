@@ -1,0 +1,120 @@
+// ARQUIVO: Service_Redacao.gs
+
+var RedacaoService = {
+
+  /**
+   * Gera documento, substitui tags e salva na pasta correta.
+   * @param {string} templateId - ID do Doc modelo.
+   * @param {string} folderId - ID da pasta de destino.
+   * @param {string} fileName - Nome do arquivo final.
+   * @param {Object} data - Objeto JSON com dados {NOME: "João", CPF: "123"}.
+   */
+  function(templateId, folderId, fileName, data) {
+    try {
+      const folder = DriveApp.getFolderById(folderId);
+      const templateFile = DriveApp.getFileById(templateId);
+      
+      // 1. Cria cópia do template
+      const newFile = templateFile.makeCopy(fileName, folder);
+      const doc = DocumentApp.openById(newFile.getId());
+      const body = doc.getBody();
+      const header = doc.getHeader();
+      const footer = doc.getFooter();
+
+      // 2. Prepara dados (Datas por extenso, formatações)
+      const dadosTratados = this._prepararDados(data);
+
+      // 3. Substituição Universal (Corpo, Cabeçalho, Rodapé)
+      this._substituirEmElemento(body, dadosTratados);
+      if (header) this._substituirEmElemento(header, dadosTratados);
+      if (footer) this._substituirEmElemento(footer, dadosTratados);
+
+      doc.saveAndClose();
+
+      return {
+        id: newFile.getId(),
+        url: newFile.getUrl(),
+        name: newFile.getName()
+      };
+    } catch (e) {
+      Logger.log("[RedacaoService] Erro: " + e.toString());
+      throw e;
+    }
+  },
+
+  /**
+   * Converte DOCX/GDoc para PDF
+   */
+  function(docId) {
+    const docFile = DriveApp.getFileById(docId);
+    const folder = docFile.getParents().next();
+    const pdfBlob = docFile.getAs(MimeType.PDF);
+    const pdfFile = folder.createFile(pdfBlob).setName(docFile.getName() + ".pdf");
+    return pdfFile.getUrl();
+  },
+
+  // --- MÉTODOS PRIVADOS (Auxiliares) ---
+
+  _substituirEmElemento: function(element, data) {
+    for (let key in data) {
+      let valor = data[key];
+      if (valor === null || valor === undefined) valor = ""; // Limpa tags vazias
+      // Substitui {TAG} pelo valor
+      element.replaceText("{" + key + "}", valor.toString());
+    }
+  },
+
+  _prepararDados: function(data) {
+    let output = { ...data }; // Clone
+    
+    // Adiciona datas automáticas
+    const hoje = new Date();
+    output["HOJE_DATA"] = Utilities.formatDate(hoje, CONFIG.LOCALE.TIMEZONE, "dd/MM/yyyy");
+    output["HOJE_EXTENSO"] = this._dataPorExtenso(hoje);
+    
+    return output;
+  },
+
+  _dataPorExtenso: function(data) {
+    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", 
+                   "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    return `${data.getDate()} de ${meses[data.getMonth()]} de ${data.getFullYear()}`;
+  }
+};
+
+// ... (Todo o código do RedacaoService acima) ...
+
+/**
+ * =================================================================
+ * FUNÇÕES GLOBAIS (GATILHOS)
+ * Estas funções existem apenas para aparecer no menu "Executar"
+ * e para serem chamadas por Triggers ou pelo WebApp.
+ * =================================================================
+ */
+
+function testeManualGerarContrato() {
+  // Dados fictícios para teste rápido
+  const DADOS_TESTE = {
+    NOME: "Cliente Teste GAIUS",
+    CPF_CNPJ: "000.000.000-00",
+    ENDERECO: "Rua do Código, 100"
+  };
+
+  // Substitua pelo ID de um Doc real seu para testar
+  const ID_TEMPLATE_TESTE = "COLOQUE_UM_ID_DE_DOC_AQUI"; 
+  const ID_PASTA_TESTE = CONFIG.IDS.DRIVE_ROOT; 
+
+  if (ID_TEMPLATE_TESTE === "COLOQUE_UM_ID_DE_DOC_AQUI") {
+    Logger.log("⚠️ ERRO: Configure um ID de Template dentro da função 'testeManualGerarContrato' para testar.");
+    return;
+  }
+
+  Logger.log("Iniciando teste de Redação...");
+  const resultado = RedacaoService.gerarDocumento(
+    ID_TEMPLATE_TESTE, 
+    ID_PASTA_TESTE, 
+    "Contrato Teste - " + new Date().getTime(), 
+    DADOS_TESTE
+  );
+  Logger.log("✅ Sucesso! Doc criado: " + resultado.url);
+}
