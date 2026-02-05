@@ -1,0 +1,43 @@
+// ARQUIVO: Repo_Clientes.gs (Na Biblioteca)
+
+var Repo_Clientes = {
+  
+  listarTodos: function() {
+    return BaseRepo.getAll(CONFIG.SHEET_NAMES.CLIENTES, SCHEMAS.CLIENTES);
+  },
+
+  criarNovo: function(dados) {
+    const repo = BaseRepo;
+    const schema = SCHEMAS.CLIENTES;
+    const aba = CONFIG.SHEET_NAMES.CLIENTES;
+    
+    // 1. Prepara o objeto com ID único
+    const novoCliente = {
+      ID: Utilities.getUuid(),
+      NOME: dados.NOME,
+      CPF_CNPJ: dados.CPF_CNPJ,
+      EMAIL: dados.EMAIL,
+      TELEFONE: dados.TELEFONE,
+      PASTA_DRIVE_ID: "" // Será preenchido pelo Service_Drive depois
+    };
+
+    // 2. Tenta criar a pasta no Drive (Se o Service_Drive estiver lá)
+    try {
+      if (typeof DriveService !== 'undefined') {
+        const folderId = DriveService.garantirPastaCliente(novoCliente.NOME, novoCliente.ID);
+        novoCliente.PASTA_DRIVE_ID = folderId;
+      }
+    } catch (e) {
+      Logger.log("Aviso: Erro ao criar pasta no Drive: " + e.message);
+    }
+
+    // 3. Salva na Planilha
+    const ws = repo.connect(aba);
+    const headers = ws.getDataRange().getValues()[0];
+    const novaLinha = repo.objToRow(novoCliente, headers, schema);
+    
+    ws.appendRow(novaLinha);
+    
+    return { success: true, msg: "Cliente cadastrado com sucesso!", id: novoCliente.ID };
+  }
+};
