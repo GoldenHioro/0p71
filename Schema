@@ -1,0 +1,48 @@
+// ARQUIVO: Config.gs
+
+var CONFIG = {
+  APP_NAME: "Rodrigues Novais CRM",
+  
+  // IDs CRITICOS - PREENCHA COM SEUS DADOS REAIS
+  IDS: {
+    // ID da Planilha que contém as abas (DB_Clientes, DB_Processos, etc)
+    SPREADSHEET: "1QSOcGZ5N_CXb1EoVV9SIxnEa7c-hb2lpq7a2oujZ0M0", 
+    
+    // ID da Pasta Raiz no Drive onde ficam os clientes
+    DRIVE_ROOT: "ID_DA_PASTA_RAIZ_CLIENTES",
+    
+    // ID da Pasta onde ficam os modelos de contrato/procuração
+    DRIVE_TEMPLATES: "ID_DA_PASTA_TEMPLATES"
+  },
+
+  // Nomes exatos das abas na sua planilha
+  SHEET_NAMES: {
+    CLIENTES: "DB_Clientes",       // Antigo 'Dados_dos_Clientes'
+    PROCESSOS: "DB_Processos",     // Antigo 'PushProcessual-APS'
+    MOVIMENTACOES: "DB_Movimentacoes", // Nova tabela para histórico
+    PARCEIROS: "DB_Parceiros",
+    FINANCEIRO: "DB_Financeiro"
+  },
+
+    LABELS: {
+    PJE_ENTRADA: "PJe",            // O marcador que o PushPP busca
+    PJE_PROCESSADO: "PJe/Processado" // O marcador de destino
+  },
+
+  // Configurações Regionais
+  LOCALE: {
+    TIMEZONE: "America/Sao_Paulo",
+    CURRENCY: "BRL"
+  }
+  
+};
+
+/**
+ * Helper para validar se a configuração foi feita
+ */
+function checkConfig() {
+  if (CONFIG.IDS.SPREADSHEET === "ID_DA_SUA_PLANILHA_AQUI") {
+    throw new Error("[GAIUS CRITICAL] Você não configurou o ID da planilha no arquivo Config.gs");
+  }
+  return true;
+}
