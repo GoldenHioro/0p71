@@ -1,0 +1,73 @@
+// ARQUIVO: BaseRepo.gs
+
+var BaseRepo = {
+  
+  /**
+   * Conecta à planilha e retorna a aba solicitada
+   */
+  connect: function(sheetName) {
+    if (!CONFIG.IDS.SPREADSHEET) throw new Error("ID da Planilha não configurado.");
+    const ss = SpreadsheetApp.openById(CONFIG.IDS.SPREADSHEET);
+    const ws = ss.getSheetByName(sheetName);
+    if (!ws) throw new Error(`Aba '${sheetName}' não encontrada na planilha. Verifique o Config.gs.`);
+    return ws;
+  },
+
+  /**
+   * LEITURA: Converte uma linha (Array) em Objeto (JSON) usando o Schema
+   */
+  rowToObj: function(row, headers, schema) {
+    let obj = {};
+    for (let key in schema) {
+      const headerName = schema[key];
+      const index = headers.indexOf(headerName);
+      obj[key] = (index > -1 && index < row.length) ? row[index] : null;
+    }
+    obj._rowIndex = null; 
+    return obj;
+  },
+
+  /**
+   * ESCRITA: Converte um Objeto (JSON) em uma linha (Array) para salvar
+   * (Esta é a função que estava faltando/falhando)
+   */
+  objToRow: function(obj, headers, schema) {
+    return headers.map(header => {
+      // Procura qual chave do Schema corresponde a este cabeçalho
+      const key = Object.keys(schema).find(k => schema[k] === header);
+      
+      // Se achou a chave e o objeto tem valor, retorna o valor. Senão, vazio.
+      if (key && obj[key] !== undefined && obj[key] !== null) {
+        // Tratamento especial para Datas: converter para JS Date ou String
+        if (obj[key] instanceof Date) {
+          return obj[key]; 
+        }
+        return obj[key];
+      }
+      return ""; // Célula vazia se não tiver dado
+    });
+  },
+
+  /**
+   * Busca todos os registros
+   */
+  getAll: function(sheetName, schema) {
+    const ws = this.connect(sheetName);
+    const data = ws.getDataRange().getValues();
+    if (data.length < 2) return []; 
+    const headers = data.shift(); 
+    return data.map((row, i) => {
+      let obj = this.rowToObj(row, headers, schema);
+      obj._rowIndex = i + 2; 
+      return obj;
+    });
+  },
+
+  /**
+   * Busca um registro específico por chave/valor
+   */
+  getBy: function(sheetName, schema, keyName, value) {
+    const all = this.getAll(sheetName, schema);
+    return all.find(item => String(item[keyName]) === String(value));
+  }
+};
