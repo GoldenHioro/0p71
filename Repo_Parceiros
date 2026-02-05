@@ -1,0 +1,26 @@
+// ARQUIVO: Repo_Parceiros.gs (Na Biblioteca)
+
+var Repo_Parceiros = {
+  listar: function() {
+    return BaseRepo.getAll(CONFIG.SHEET_NAMES.PARCEIROS, SCHEMAS.PARCEIROS);
+  },
+
+  criar: function(dados) {
+    const repo = BaseRepo;
+    const schema = SCHEMAS.PARCEIROS;
+    const aba = CONFIG.SHEET_NAMES.PARCEIROS;
+    
+    const novo = {
+      ID: Utilities.getUuid(),
+      NOME: dados.NOME,
+      OAB: dados.OAB,
+      EMAIL: dados.EMAIL,
+      TELEFONE: dados.TELEFONE
+    };
+
+    const ws = repo.connect(aba);
+    const headers = ws.getDataRange().getValues()[0];
+    ws.appendRow(repo.objToRow(novo, headers, schema));
+    return novo;
+  }
+};
