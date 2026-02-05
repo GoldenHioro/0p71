@@ -1,48 +1,47 @@
-// ARQUIVO: Config.gs
+// ARQUIVO: Schema.gs (Versão Final Otimizada)
 
-var CONFIG = {
-  APP_NAME: "Rodrigues Novais CRM",
+var SCHEMAS = {
   
-  // IDs CRITICOS - PREENCHA COM SEUS DADOS REAIS
-  IDS: {
-    // ID da Planilha que contém as abas (DB_Clientes, DB_Processos, etc)
-    SPREADSHEET: "1QSOcGZ5N_CXb1EoVV9SIxnEa7c-hb2lpq7a2oujZ0M0", 
+  CLIENTES: {
+    ID: "Unique ID",
+    NOME: "Nome Completo",
+    CPF_CNPJ: "CPF ou CNPJ",
+    EMAIL: "Email",
+    TELEFONE: "Número de Telefone",
+    ENDERECO: "Endereço Completo",
+    CIDADE: "Cidade",
+    CEP: "CEP da residência",
+    PASTA_DRIVE_ID: "DriveFolderId"
+  },
+
+  // Tabela Mestra de Processos (Uma linha por processo)
+  PROCESSOS: {
+    ID: "IdProcesso",           // UUID
+    NUMERO: "NúmeroProcesso",   // Chave Única (CNJ)
+    CLIENTE_ID: "Unique ID",    // Foreign Key
+    SEU_POLO: "Papel_Cliente", // <--- NOVO: Armazena "Ativo" ou "Passivo"
     
-    // ID da Pasta Raiz no Drive onde ficam os clientes
-    DRIVE_ROOT: "ID_DA_PASTA_RAIZ_CLIENTES",
+    // Dados Capturados do Cabeçalho do E-mail/CSV
+    POLO_ATIVO: "Autor",
+    POLO_PASSIVO: "Réu",
+    ORGAO: "Vara_Orgao",        // "1ª Vara Cível..."
+    CLASSE: "Classe_Judicial",
+    ASSUNTO: "Assunto_Principal",
+    VALOR_CAUSA: "Valor_Causa",
     
-    // ID da Pasta onde ficam os modelos de contrato/procuração
-    DRIVE_TEMPLATES: "ID_DA_PASTA_TEMPLATES"
+    // Controle Interno
+    STATUS: "Status",           // Ativo/Arquivado
+    ULTIMA_MOV_DATA: "Data_Ultima_Mov", // Para ordenação rápida
+    LINK_PJE: "Link_Sistema"
   },
 
-  // Nomes exatos das abas na sua planilha
-  SHEET_NAMES: {
-    CLIENTES: "DB_Clientes",       // Antigo 'Dados_dos_Clientes'
-    PROCESSOS: "DB_Processos",     // Antigo 'PushProcessual-APS'
-    MOVIMENTACOES: "DB_Movimentacoes", // Nova tabela para histórico
-    PARCEIROS: "DB_Parceiros",
-    FINANCEIRO: "DB_Financeiro"
-  },
-
-    LABELS: {
-    PJE_ENTRADA: "PJe",            // O marcador que o PushPP busca
-    PJE_PROCESSADO: "PJe/Processado" // O marcador de destino
-  },
-
-  // Configurações Regionais
-  LOCALE: {
-    TIMEZONE: "America/Sao_Paulo",
-    CURRENCY: "BRL"
-  }
-  
-};
-
-/**
- * Helper para validar se a configuração foi feita
- */
-function checkConfig() {
-  if (CONFIG.IDS.SPREADSHEET === "ID_DA_SUA_PLANILHA_AQUI") {
-    throw new Error("[GAIUS CRITICAL] Você não configurou o ID da planilha no arquivo Config.gs");
-  }
-  return true;
-}
+  // Tabela de Histórico (Muitas linhas por processo)
+  MOVIMENTACOES: {
+      ID: "IdMov",
+      PROCESSO_NUM: "Ref_NumeroProcesso",
+      DATA_MOV: "Data_Movimento",
+      DESCRICAO: "Descricao", // Única coluna de texto agora
+      DATA_CAPTURA: "Data_Leitura",
+      ORIGEM: "Fonte"
+    }
+  };
