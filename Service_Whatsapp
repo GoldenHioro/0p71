@@ -1,0 +1,124 @@
+// ARQUIVO: Service_Whatsapp.gs (Na Biblioteca)
+
+var Service_Whatsapp = {
+
+  /**
+   * Gera a Fila de Disparos baseada nas regras de tempo do 0x61
+   */
+  gerarFilaDisparos: function() {
+    const movs = BaseRepo.getAll(CONFIG.SHEET_NAMES.MOVIMENTACOES, SCHEMAS.MOVIMENTACOES);
+    const processos = BaseRepo.getAll(CONFIG.SHEET_NAMES.PROCESSOS, SCHEMAS.PROCESSOS);
+    const clientes = BaseRepo.getAll(CONFIG.SHEET_NAMES.CLIENTES, SCHEMAS.CLIENTES);
+
+    let fila = [];
+    const hoje = new Date();
+    
+    // Processar cada processo ATIVO para ver o status
+    processos.forEach(proc => {
+      if (!proc.CLIENTE_ID || proc.CLIENTE_ID === "Pendente Vinculo") return;
+      
+      const cli = clientes.find(c => c.ID === proc.CLIENTE_ID);
+      if (!cli) return;
+
+      // Pega a ÚLTIMA movimentação deste processo
+      const ultimasMovs = movs
+        .filter(m => m.PROCESSO_NUM === proc.NUMERO)
+        .sort((a, b) => new Date(b.DATA_MOV) - new Date(a.DATA_MOV));
+
+      if (ultimasMovs.length === 0) return;
+
+      const ultima = ultimasMovs[0];
+      const dataMov = new Date(ultima.DATA_MOV);
+      const dataCaptura = new Date(ultima.DATA_CAPTURA);
+      
+      // --- REGRA 1: Checagem de 5 Dias Úteis (Silêncio) ---
+      const diasSemMovimentar = this.calcularDiasUteis(dataMov, hoje);
+      if (diasSemMovimentar >= 5) {
+        // Opcional: Adicionar à fila como "Informe de inatividade" se desejar
+        // fila.push(this.montarPacote(cli, proc, ultima, "INATIVIDADE"));
+        return; 
+      }
+
+      // --- REGRA 2: Checagem Recente (Nova Movimentação) ---
+      // Só notifica se foi capturado nos últimos 2 dias (para não reenviar velharia)
+      const diffHorasCaptura = (hoje - dataCaptura) / 36e5; 
+      if (diffHorasCaptura > 48) return; 
+
+      // --- REGRA 3: A Regra das 15h ---
+      const horaCaptura = dataCaptura.getHours();
+      let statusEnvio = "Enviar Hoje";
+      let saudacao = this.getSaudacao(hoje.getHours());
+      
+      if (horaCaptura >= 15) {
+        statusEnvio = "⚠️ Após 15h (Enviar Amanhã)";
+        saudacao = "Bom dia"; // Já prepara saudação para o dia seguinte
+      }
+
+      // Monta o objeto final
+      fila.push({
+        status: statusEnvio,
+        cliente: cli.NOME,
+        processo: proc.NUMERO,
+        textoMov: ultima.DESCRICAO,
+        interpretacao: this.interpretarTexto(ultima.DESCRICAO),
+        linkZap: this.gerarLink(cli, proc, ultima.DESCRICAO, saudacao)
+      });
+    });
+
+    return fila;
+  },
+
+  /**
+   * O INTERPRETADOR (Cole suas regras do 0x61 aqui)
+   * Traduz juridiquês para linguagem do cliente
+   */
+  interpretarTexto: function(textoOriginal) {
+    const t = textoOriginal.toLowerCase();
+    
+    if (t.includes("audiência") || t.includes("sessão")) return "Foi marcada uma data importante para o seu processo (Audiência).";
+    if (t.includes("conclusos") || t.includes("conclusão")) return "O processo está na mesa do juiz para decisão.";
+    if (t.includes("expedição") || t.includes("alvará")) return "Houve uma ordem de pagamento ou documento liberado.";
+    if (t.includes("citação") || t.includes("intimação")) return "Uma das partes foi comunicada oficialmente.";
+    if (t.includes("arquivamento")) return "O processo foi arquivado.";
+    
+    // Padrão (se não achar regra)
+    return "Houve uma atualização técnica no andamento.";
+  },
+
+  /**
+   * GERADOR DE MENSAGEM (Estrutura 0x61)
+   */
+  gerarLink: function(cli, proc, textoMov, saudacao) {
+    const interpretacao = this.interpretarTexto(textoMov);
+    
+    // ESTRUTURA DA MENSAGEM
+    let msg = `${saudacao}, ${cli.NOME.split(' ')[0]}. Tudo bem?%0A%0A`;
+    msg += `Temos uma atualização no processo *${proc.NUMERO}*.%0A%0A`;
+    msg += `ℹ️ *O que aconteceu:* ${interpretacao}%0A`;
+    msg += `📄 *Detalhe técnico:* _${textoMov}_%0A%0A`;
+    msg += `Já estamos cientes e tomando as providências. Qualquer dúvida, é só chamar.`;
+
+    let tel = String(cli.TELEFONE).replace(/\D/g, "");
+    if (!tel.startsWith("55")) tel = "55" + tel;
+
+    return `https://api.whatsapp.com/send?phone=${tel}&text=${msg}`;
+  },
+
+  getSaudacao: function(hora) {
+    if (hora < 12) return "Bom dia";
+    if (hora < 18) return "Boa tarde";
+    return "Boa noite";
+  },
+
+  calcularDiasUteis: function(inicio, fim) {
+    // Simplificado para exemplo. O ideal é usar biblioteca de feriados se precisar precisão absoluta.
+    let count = 0;
+    let atual = new Date(inicio);
+    while (atual <= fim) {
+      const day = atual.getDay();
+      if (day !== 0 && day !== 6) count++; // Ignora Sábado e Domingo
+      atual.setDate(atual.getDate() + 1);
+    }
+    return count;
+  }
+};
